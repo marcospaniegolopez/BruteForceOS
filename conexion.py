@@ -74,7 +74,24 @@ def lanzar_conexion(credencial: dict) -> None:
             pausar()
             return
         msg_nota("Escribe 'exit' para cerrar la sesión SSH y volver a BruteForceOS.\n")
-        subprocess.run(["ssh", "-p", str(puerto), f"{usuario}@{ip}"], check=False)
+        res_ssh = subprocess.run(["ssh", "-p", str(puerto), f"{usuario}@{ip}"], check=False)
+        if res_ssh.returncode != 0:
+            msg_nota("Reintentando conexión SSH con compatibilidad para servidores antiguos...")
+            subprocess.run(
+                [
+                    "ssh",
+                    "-p",
+                    str(puerto),
+                    "-o",
+                    "MACs=+hmac-sha1,hmac-md5",
+                    "-o",
+                    "KexAlgorithms=+diffie-hellman-group14-sha1,diffie-hellman-group1-sha1",
+                    "-o",
+                    "HostKeyAlgorithms=+ssh-rsa",
+                    f"{usuario}@{ip}",
+                ],
+                check=False,
+            )
 
     elif servicio == "ftp":
         if _asegurar_herramienta("lftp", "lftp"):

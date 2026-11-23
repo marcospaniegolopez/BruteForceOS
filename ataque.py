@@ -179,23 +179,42 @@ def ejecutar_hydra(
         pausar()
         return []
 
-    cmd = ["hydra", "-t", str(hilos), "-s", str(puerto)]
+    base_cmd = ["hydra", "-I", "-t", str(hilos), "-s", str(puerto)]
     if usuario:
-        cmd.extend(["-l", usuario])
+        base_cmd.extend(["-l", usuario])
     elif lista_usuarios:
-        cmd.extend(["-L", lista_usuarios])
+        base_cmd.extend(["-L", lista_usuarios])
     else:
         msg_aviso("Debes indicar un usuario o una lista de usuarios.")
         pausar()
         return []
 
-    cmd.extend(["-P", diccionario_passwords, ip, servicio])
+    cmd = base_cmd + ["-P", diccionario_passwords, ip, servicio]
     msg_info(f"Lanzando Hydra contra {ip}:{puerto} ({servicio})...")
     print("-" * 62)
 
     res = subprocess.run(cmd, capture_output=True, text=True, check=False)
     salida = (res.stdout or "") + (res.stderr or "")
     print(salida)
+
+    # Si es SSH y hay choque de algoritmos/MAC con un servidor antiguo, reintenta automáticamente
+    if servicio == "ssh" and any(
+        clave in salida.lower()
+        for clave in ("no match for method", "kex error", "mac algo", "cipher")
+    ):
+        msg_nota("Servidor SSH antiguo detectado. Reintentando con algoritmos compatibles...")
+        cmd_legado = base_cmd + [
+            "-m",
+            "hmac-sha1,hmac-md5,umac-64@openssh.com",
+            "-P",
+            diccionario_passwords,
+            ip,
+            servicio,
+        ]
+        res_legado = subprocess.run(cmd_legado, capture_output=True, text=True, check=False)
+        salida_legado = (res_legado.stdout or "") + (res_legado.stderr or "")
+        print(salida_legado)
+        salida += "\n" + salida_legado
 
     hallazgos = _extraer_credenciales_hydra(salida)
     datos_ip = _cargar_json(CARPETA_ESCANEO / f"{ip}.json", {})
