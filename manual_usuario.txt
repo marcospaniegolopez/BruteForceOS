@@ -1,0 +1,97 @@
+=============================================================================
+                        MANUAL DE USUARIO - BRUTEFORCEOS
+=============================================================================
+Programa creado por: Marcos Paniego López
+AVISO LEGAL: Uso exclusivo en entornos de prueba propios o autorizados.
+El autor no se responsabiliza del uso indebido de esta herramienta.
+=============================================================================
+
+1. DESCRIPCIÓN GENERAL
+-----------------------------------------------------------------------------
+BruteForceOS es una herramienta modular en Python diseñada para automatizar
+el flujo de trabajo en laboratorios de auditoría y acceso remoto sobre
+sistemas operativos:
+  - Reconocimiento de red, comprobación de host (ping -c 1), detección de
+    puertos/servicios y estimación de SO/dispositivo con Nmap.
+  - Gestión, creación y unión de diccionarios (RockYou, Crunch, CUPP, sort -u).
+  - Pruebas de acceso por fuerza bruta con Hydra sobre servicios compatibles
+    (SSH, FTP, Telnet), guardando credenciales exitosas.
+  - Conexión rápida introduciendo solo la IP o seleccionando un dispositivo
+    ya accedido anteriormente desde el historial guardado.
+  - Reseteo limpio del objetivo/diccionario de la sesión actual sin perder
+    los resultados acumulados.
+
+
+2. ESTRUCTURA DE CARPETAS Y ARCHIVOS
+-----------------------------------------------------------------------------
+BruteForceOS/
+├── main.py                  -> Punto de entrada, banner, menú y sesión.
+├── reconocimiento.py        -> Ping, escaneo de red y análisis de IP/SO.
+├── diccionarios.py          -> Listado, creación y fusión de diccionarios.
+├── ataque.py                -> Lanzamiento de Hydra y registro de accesos.
+├── conexion.py              -> Conexión por IP o desde historial previo.
+├── manual_usuario.txt       -> Este manual de uso.
+├── .gitignore               -> Exclusiones recomendadas para Git/GitHub.
+├── diccionarios/            -> Carpeta para archivos de diccionarios (.txt).
+└── resultados/
+    ├── escaneos/            -> Ficheros JSON por IP (<ip>.json) con puertos,
+    │                           servicios, SO estimado y credenciales.
+    └── dispositivos_accedidos.json
+                             -> Historial global de equipos ya accedidos.
+
+
+3. FLUJO DE TRABAJO RECOMENDADO
+-----------------------------------------------------------------------------
+Edición y control de versiones:
+  1) Edita y organiza los archivos en Windows con Visual Studio Code.
+  2) Sube los cambios a tu repositorio de GitHub (BruteForceOS).
+  3) En tu máquina Kali Linux, clona o actualiza el repositorio:
+       git clone <url_del_repositorio>
+       cd BruteForceOS
+       git pull
+
+Ejecución en laboratorio:
+  python3 main.py
+
+Flujo habitual paso a paso:
+  Paso 1 - Reconocimiento (Opción 1):
+    * Escanea la red (-sn) o haz ping (-c 1) a una IP para verificar que
+      responde.
+    * Analiza la IP objetivo para detectar puertos abiertos, servicios y SO
+      estimado. Los datos quedan guardados en resultados/escaneos/<ip>.json.
+
+  Paso 2 - Diccionarios (Opción 2):
+    * Revisa la carpeta diccionarios/. Si está vacía, el programa te avisará
+      para que coloques ahí tus archivos .txt.
+    * Selecciona un diccionario existente o crea/prepara uno nuevo (descomprimir
+      rockyou.txt.gz, generar con Crunch o CUPP, o unir dos listas sin
+      repetidos con sort -u).
+
+  Paso 3 - Pruebas de acceso (Opción 3):
+    * El programa toma la IP objetivo y el diccionario activo (o te permite
+      indicarlos).
+    * Puede usar automáticamente los puertos SSH/FTP/Telnet detectados en el
+      escaneo previo o dejarte elegir servicio y puerto a mano.
+    * Si Hydra encuentra credenciales válidas, las guarda en el JSON de la IP
+      y en resultados/dispositivos_accedidos.json.
+
+  Paso 4 - Conexión automática o dispositivos anteriores (Opción 4):
+    * "Conectar indicando solo la IP": busca el puerto, servicio, usuario y
+      contraseña guardados para esa IP y lanza la conexión correspondiente.
+    * "Conectarse a un dispositivo anterior guardado": muestra la lista de
+      equipos ya accedidos y conecta al elegir su número.
+
+  Paso 5 - Reset de sesión (Opción 5):
+    * Limpia el objetivo y el diccionario de la sesión actual para pasar a
+      otra prueba sin borrar el historial de dispositivos ni los escaneos.
+
+
+4. NOTAS Y BUENAS PRÁCTICAS
+-----------------------------------------------------------------------------
+- Asegúrate de tener instaladas en Kali las herramientas del sistema según
+  las pruebas que vayas a realizar: nmap, hydra, crunch, cupp, openssh-client,
+  ftp/lftp y telnet.
+- Usa codificación UTF-8 y finales de línea LF al editar los archivos en VS Code.
+- No utilices este programa fuera de entornos de laboratorio propios o con
+  autorización expresa.
+=============================================================================
