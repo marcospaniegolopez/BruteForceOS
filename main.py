@@ -1,4 +1,3 @@
-import os
 import sys
 import time
 from pathlib import Path
@@ -7,6 +6,17 @@ from ataque import menu_ataque
 from conexion import menu_conexion
 from diccionarios import menu_diccionarios
 from reconocimiento import menu_reconocimiento
+from ui import (
+    barra_sesion,
+    cyan,
+    gris,
+    imprimir_menu,
+    limpiar,
+    msg_aviso,
+    msg_info,
+    pausar,
+    verde,
+)
 
 BASE_DIR = Path(__file__).resolve().parent
 CARPETA_DICCIONARIOS = BASE_DIR / "diccionarios"
@@ -21,39 +31,24 @@ def inicializar_carpetas() -> None:
 
 
 def animacion_inicio() -> None:
-    os.system("cls" if os.name == "nt" else "clear")
-    banner = [
-        "=============================================================",
-        "                  B R U T E F O R C E  O S                 ",
-        "       Programa creado por: Marcos Paniego López            ",
-        "   AVISO: Uso exclusivo en entornos de prueba autorizados   ",
-        "=============================================================",
+    limpiar()
+    lineas = [
+        cyan("=" * 62),
+        verde("              B R U T E F O R C E   O S              "),
+        "         Programa creado por: Marcos Paniego López        ",
+        gris("     Uso exclusivo en entornos de prueba autorizados    "),
+        cyan("=" * 62),
     ]
-    for linea in banner:
+    for linea in lineas:
         print(linea)
-        time.sleep(0.08)
-
-
-def mostrar_estado_sesion(sesion: dict) -> None:
-    ip_actual = sesion.get("objetivo_ip") or "Ninguna"
-    dic_actual = sesion.get("diccionario") or "Ninguno"
-    print(f"\n[Sesión] Objetivo actual: {ip_actual} | Diccionario: {dic_actual}")
+        time.sleep(0.06)
 
 
 def resetear_sesion(sesion: dict) -> None:
     sesion["objetivo_ip"] = None
     sesion["diccionario"] = None
-    print("\n[+] Sesión/objetivo actual reseteado (los resultados guardados se mantienen).")
-
-
-def mostrar_menu() -> None:
-    print("\n--- MENÚ PRINCIPAL ---")
-    print("1) Reconocimiento y análisis de red / SO")
-    print("2) Gestión y creación de diccionarios")
-    print("3) Pruebas de acceso y credenciales")
-    print("4) Acceso por IP / Dispositivos anteriores")
-    print("5) Resetear objetivo de la sesión actual")
-    print("0) Salir")
+    msg_info("Sesión reseteada. Los escaneos y dispositivos guardados se mantienen.")
+    pausar()
 
 
 def main() -> None:
@@ -65,10 +60,22 @@ def main() -> None:
         "diccionario": None,
     }
 
+    opciones_menu = [
+        ("1", "Reconocimiento y análisis de red / SO"),
+        ("2", "Gestión y creación de diccionarios"),
+        ("3", "Pruebas de acceso y credenciales"),
+        ("4", "Acceso por IP / Dispositivos anteriores"),
+        ("5", "Resetear objetivo de la sesión actual"),
+        ("0", "Salir"),
+    ]
+
     while True:
-        mostrar_estado_sesion(sesion)
-        mostrar_menu()
-        opcion = input("\nElige una opción: ").strip()
+        limpiar()
+        print(cyan("BRUTEFORCE OS") + gris("  |  Autor: Marcos Paniego López"))
+        barra_sesion(sesion["objetivo_ip"], sesion["diccionario"])
+        imprimir_menu("Menú Principal", opciones_menu)
+
+        opcion = input(verde("Elige una opción: ")).strip()
 
         if opcion == "1":
             sesion["objetivo_ip"] = menu_reconocimiento(sesion["objetivo_ip"])
@@ -81,10 +88,12 @@ def main() -> None:
         elif opcion == "5":
             resetear_sesion(sesion)
         elif opcion == "0":
-            print("\nSaliendo de BruteForceOS...")
+            limpiar()
+            msg_info("Saliendo de BruteForceOS. ¡Hasta la próxima prueba!")
             sys.exit(0)
         else:
-            print("\n[!] Opción no válida. Inténtalo de nuevo.")
+            msg_aviso("Opción no válida. Revisa las opciones disponibles.")
+            pausar()
 
 
 if __name__ == "__main__":

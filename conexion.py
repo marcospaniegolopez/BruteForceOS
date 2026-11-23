@@ -3,6 +3,19 @@ import shutil
 import subprocess
 from pathlib import Path
 
+from ui import (
+    cabecera_seccion,
+    imprimir_menu,
+    limpiar,
+    msg_aviso,
+    msg_error,
+    msg_info,
+    msg_nota,
+    msg_ok,
+    pausar,
+    verde,
+)
+
 BASE_DIR = Path(__file__).resolve().parent
 CARPETA_RESULTADOS = BASE_DIR / "resultados"
 CARPETA_ESCANEO = CARPETA_RESULTADOS / "escaneos"
@@ -26,35 +39,45 @@ def lanzar_conexion(credencial: dict) -> None:
     usuario = credencial["usuario"]
     password = credencial["password"]
 
-    print(f"\n[+] Conectando a {ip} por {servicio.upper()} en el puerto {puerto} como '{usuario}'...")
-    print(f"[i] Contraseña guardada: {password}")
+    limpiar()
+    cabecera_seccion("Conectado al Sistema", f"{ip}:{puerto} ({servicio.upper()})")
+    msg_ok(f"Usuario: {usuario}  |  Contraseña: {password}")
+    print()
 
     if servicio == "ssh":
         if not shutil.which("ssh"):
-            print("[!] 'ssh' no está disponible en este sistema.")
+            msg_error("'ssh' no está instalado en este sistema.")
+            pausar()
             return
-        cmd = ["ssh", "-p", str(puerto), f"{usuario}@{ip}"]
-        subprocess.run(cmd, check=False)
+        msg_nota("Escribe 'exit' para cerrar la sesión SSH y volver a BruteForceOS.\n")
+        subprocess.run(["ssh", "-p", str(puerto), f"{usuario}@{ip}"], check=False)
 
     elif servicio == "ftp":
         if shutil.which("lftp"):
-            cmd = ["lftp", "-u", f"{usuario},{password}", "-p", str(puerto), ip]
-            subprocess.run(cmd, check=False)
+            msg_nota("Sesión FTP activa con lftp. Escribe 'exit' o 'quit' para salir.\n")
+            subprocess.run(["lftp", "-u", f"{usuario},{password}", "-p", str(puerto), ip], check=False)
         elif shutil.which("ftp"):
-            print(f"[i] Usa usuario '{usuario}' y contraseña '{password}' cuando lo solicite.")
+            msg_nota("Cliente 'ftp' estándar detectado (sin autologin).")
+            msg_info(f"Usuario: {usuario}  |  Contraseña: {password}\n")
             subprocess.run(["ftp", ip, str(puerto)], check=False)
         else:
-            print("[!] No se encontró 'ftp' ni 'lftp'.")
+            msg_error("No está instalado 'lftp' ni 'ftp'. Instálalo con: sudo apt install lftp")
 
     elif servicio == "telnet":
         if not shutil.which("telnet"):
-            print("[!] 'telnet' no está disponible en este sistema.")
+            msg_error("'telnet' no está instalado en este sistema.")
+            pausar()
             return
-        print(f"[i] Usuario guardado: '{usuario}' | Contraseña guardada: '{password}'")
+        msg_info(f"Usuario: {usuario}  |  Contraseña: {password}")
+        msg_nota("Escribe 'exit' o 'logout' para cerrar la sesión.\n")
         subprocess.run(["telnet", ip, str(puerto)], check=False)
 
     else:
-        print(f"[!] Servicio no soportado para conexión automática: {servicio}")
+        msg_aviso(f"Servicio no soportado para conexión automática: {servicio}")
+
+    print()
+    msg_info("Sesión remota finalizada.")
+    pausar()
 
 
 def conectar_por_ip(ip: str) -> bool:
@@ -67,7 +90,8 @@ def conectar_por_ip(ip: str) -> bool:
         creds = [d for d in todos if d.get("ip") == ip]
 
     if not creds:
-        print(f"[!] No hay credenciales ni puertos guardados para la IP {ip}. Ejecuta primero el escaneo y el ataque.")
+        msg_aviso(f"No hay credenciales guardadas para la IP {ip}.")
+        pausar()
         return False
 
     if len(creds) == 1:
@@ -77,47 +101,57 @@ def conectar_por_ip(ip: str) -> bool:
         lanzar_conexion(elegida)
         return True
 
-    print(f"\nAccesos guardados para {ip} ({so_disp}):")
+    cabecera_seccion(f"Accesos para {ip}", f"SO / Dispositivo: {so_disp}")
     for idx, c in enumerate(creds, start=1):
-        print(f"  {idx}) {c['servicio'].upper()} puerto {c['puerto']} -> usuario '{c['usuario']}'")
-    sel = input("Elige cuál usar [1]: ").strip() or "1"
+        print(f"  [{idx}] {c['servicio'].upper()} puerto {c['puerto']} -> usuario '{c['usuario']}'")
+    sel = input(verde("Elige cuál usar [1]: ")).strip() or "1"
     if sel.isdigit() and 1 <= int(sel) <= len(creds):
         elegida = dict(creds[int(sel) - 1])
         elegida.setdefault("ip", ip)
         lanzar_conexion(elegida)
         return True
 
-    print("[!] Selección no válida.")
+    msg_aviso("Selección no válida.")
+    pausar()
     return False
 
 
 def menu_conexion(objetivo_actual: str | None = None) -> str | None:
     while True:
-        print("\n=== ACCESO AUTOMÁTICO Y DISPOSITIVOS ANTERIORES ===")
-        print("1) Conectar indicando solo la IP (usa puerto y credenciales guardados)")
-        print("2) Conectarse a un dispositivo anterior guardado")
-        print("0) Volver al menú principal")
+        limpiar()
+        imprimir_menu(
+            "Acceso y Dispositivos",
+            [
+                ("1", "Conectar indicando solo la IP"),
+                ("2", "Conectarse a un dispositivo anterior guardado"),
+                ("0", "Volver al menú principal"),
+            ],
+            subtitulo=f"Objetivo en sesión: {objetivo_actual or 'Ninguno'}",
+        )
 
-        op = input("Elige opción: ").strip()
+        op = input(verde("Elige opción: ")).strip()
 
         if op == "1":
-            ip = input(f"Introduce solo la IP [{objetivo_actual or ''}]: ").strip() or (objetivo_actual or "")
+            ip = input(verde(f"Introduce solo la IP [{objetivo_actual or ''}]: ")).strip() or (objetivo_actual or "")
             if ip:
                 conectar_por_ip(ip)
                 return ip
-            print("[!] Debes indicar una IP.")
+            msg_aviso("Debes indicar una IP.")
+            pausar()
         elif op == "2":
             dispositivos = _cargar_json(ARCHIVO_DISPOSITIVOS, [])
             if not dispositivos:
-                print("[!] Todavía no hay dispositivos anteriores guardados.")
+                msg_aviso("Todavía no hay dispositivos anteriores guardados.")
+                pausar()
                 continue
-            print("\n--- DISPOSITIVOS ANTERIORES ---")
+            limpiar()
+            cabecera_seccion("Dispositivos Anteriores", "Historial de accesos guardados")
             for idx, d in enumerate(dispositivos, start=1):
                 print(
-                    f"  {idx}) IP: {d['ip']} | {d['servicio'].upper()}:{d['puerto']} | "
-                    f"User: {d['usuario']} | SO/Disp: {d.get('so_dispositivo', 'No detectado')}"
+                    f"  [{idx}] {d['ip']} | {d['servicio'].upper()}:{d['puerto']} | "
+                    f"User: {d['usuario']} | {d.get('so_dispositivo', 'No detectado')}"
                 )
-            sel = input("Elige el número de dispositivo (o Enter para cancelar): ").strip()
+            sel = input(verde("\nElige el número de dispositivo (o Enter para cancelar): ")).strip()
             if sel.isdigit() and 1 <= int(sel) <= len(dispositivos):
                 elegido = dispositivos[int(sel) - 1]
                 lanzar_conexion(elegido)
@@ -125,4 +159,5 @@ def menu_conexion(objetivo_actual: str | None = None) -> str | None:
         elif op == "0":
             return objetivo_actual
         else:
-            print("[!] Opción no válida.")
+            msg_aviso("Opción no válida.")
+            pausar()

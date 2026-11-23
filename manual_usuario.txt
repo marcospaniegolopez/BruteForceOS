@@ -10,15 +10,17 @@ El autor no se responsabiliza del uso indebido de esta herramienta.
 -----------------------------------------------------------------------------
 BruteForceOS es una herramienta modular en Python diseñada para automatizar
 el flujo de trabajo en laboratorios de auditoría y acceso remoto sobre
-sistemas operativos:
+sistemas operativos, con una interfaz de consola limpia y unificada:
   - Reconocimiento de red, comprobación de host (ping -c 1), detección de
     puertos/servicios y estimación de SO/dispositivo con Nmap.
   - Gestión, creación y unión de diccionarios (RockYou, Crunch, CUPP, sort -u).
   - Pruebas de acceso por fuerza bruta con Hydra sobre servicios compatibles
-    (SSH, FTP, Telnet), guardando credenciales exitosas.
+    (SSH, FTP, Telnet), permitiendo usar diccionario para usuarios o
+    contraseñas y guardando las credenciales válidas.
   - Conexión rápida introduciendo solo la IP o seleccionando un dispositivo
-    ya accedido anteriormente desde el historial guardado.
-  - Reseteo limpio del objetivo/diccionario de la sesión actual sin perder
+    ya accedido anteriormente desde el historial guardado, con pantalla
+    limpia de sesión activa y pausa controlada al desconectar.
+  - Reseteo limpio del objetivo y diccionario de la sesión actual sin borrar
     los resultados acumulados.
 
 
@@ -26,6 +28,7 @@ sistemas operativos:
 -----------------------------------------------------------------------------
 BruteForceOS/
 ├── main.py                  -> Punto de entrada, banner, menú y sesión.
+├── ui.py                    -> Colores ANSI, cabeceras, menús, mensajes y pausas.
 ├── reconocimiento.py        -> Ping, escaneo de red y análisis de IP/SO.
 ├── diccionarios.py          -> Listado, creación y fusión de diccionarios.
 ├── ataque.py                -> Lanzamiento de Hydra y registro de accesos.
@@ -55,8 +58,8 @@ Ejecución en laboratorio:
 
 Flujo habitual paso a paso:
   Paso 1 - Reconocimiento (Opción 1):
-    * Escanea la red (-sn) o haz ping (-c 1) a una IP para verificar que
-      responde.
+    * Escanea la red (-sn, por ejemplo 192.168.68.0/24) o haz ping (-c 1) a
+      una IP para verificar que responde.
     * Analiza la IP objetivo para detectar puertos abiertos, servicios y SO
       estimado. Los datos quedan guardados en resultados/escaneos/<ip>.json.
 
@@ -68,18 +71,22 @@ Flujo habitual paso a paso:
       repetidos con sort -u).
 
   Paso 3 - Pruebas de acceso (Opción 3):
-    * El programa toma la IP objetivo y el diccionario activo (o te permite
-      indicarlos).
-    * Puede usar automáticamente los puertos SSH/FTP/Telnet detectados en el
-      escaneo previo o dejarte elegir servicio y puerto a mano.
+    * Toma la IP objetivo y el diccionario de contraseñas activo (o te
+      permite indicar otros).
+    * Permite indicar un usuario concreto o usar un diccionario de usuarios
+      (el mismo diccionario u otro distinto).
+    * Usa los puertos SSH/FTP/Telnet detectados en el escaneo previo o te
+      deja elegir servicio y puerto manualmente.
     * Si Hydra encuentra credenciales válidas, las guarda en el JSON de la IP
       y en resultados/dispositivos_accedidos.json.
 
   Paso 4 - Conexión automática o dispositivos anteriores (Opción 4):
     * "Conectar indicando solo la IP": busca el puerto, servicio, usuario y
-      contraseña guardados para esa IP y lanza la conexión correspondiente.
-    * "Conectarse a un dispositivo anterior guardado": muestra la lista de
-      equipos ya accedidos y conecta al elegir su número.
+      contraseña guardados para esa IP y abre la conexión.
+    * "Conectarse a un dispositivo anterior guardado": muestra el historial de
+      equipos accedidos y conecta al elegir su número.
+    * Al conectar, limpia la pantalla, muestra los datos de acceso y, al
+      cerrar la sesión remota, espera ENTER antes de volver al menú.
 
   Paso 5 - Reset de sesión (Opción 5):
     * Limpia el objetivo y el diccionario de la sesión actual para pasar a
@@ -90,7 +97,7 @@ Flujo habitual paso a paso:
 -----------------------------------------------------------------------------
 - Asegúrate de tener instaladas en Kali las herramientas del sistema según
   las pruebas que vayas a realizar: nmap, hydra, crunch, cupp, openssh-client,
-  ftp/lftp y telnet.
+  lftp/ftp y telnet.
 - Usa codificación UTF-8 y finales de línea LF al editar los archivos en VS Code.
 - No utilices este programa fuera de entornos de laboratorio propios o con
   autorización expresa.

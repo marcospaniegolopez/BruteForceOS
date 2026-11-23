@@ -5,6 +5,20 @@ import subprocess
 from datetime import datetime
 from pathlib import Path
 
+from ui import (
+    cabecera_seccion,
+    gris,
+    imprimir_menu,
+    limpiar,
+    msg_aviso,
+    msg_error,
+    msg_info,
+    msg_nota,
+    msg_ok,
+    pausar,
+    verde,
+)
+
 BASE_DIR = Path(__file__).resolve().parent
 CARPETA_ESCANEO = BASE_DIR / "resultados" / "escaneos"
 
@@ -14,8 +28,8 @@ def asegurar_carpeta_escaneos() -> Path:
     return CARPETA_ESCANEO
 
 
-def hacer_ping(ip: str) -> bool:
-    print(f"\n[+] Enviando ping (-c 1) a {ip}...")
+def hacer_ping(ip: str, pausar_al_final: bool = False) -> bool:
+    msg_info(f"Enviando ping (-c 1) a {ip}...")
     try:
         res = subprocess.run(
             ["ping", "-c", "1", ip],
@@ -24,28 +38,35 @@ def hacer_ping(ip: str) -> bool:
             check=False,
         )
         if res.returncode == 0:
-            print(f"[OK] El paquete ha llegado a {ip} (host activo).")
+            msg_ok(f"El paquete ha llegado a {ip} (host activo).")
+            if pausar_al_final:
+                pausar()
             return True
-        print(f"[X] No ha respondido el paquete a {ip}.")
+        msg_error(f"No ha respondido el paquete a {ip}.")
+        if pausar_al_final:
+            pausar()
         return False
     except FileNotFoundError:
-        print("[!] El comando 'ping' no está disponible en este sistema.")
+        msg_error("El comando 'ping' no está disponible en este sistema.")
+        if pausar_al_final:
+            pausar()
         return False
 
 
 def _ejecutar_nmap(args: list[str], usar_sudo: bool = False) -> str:
     if not shutil.which("nmap"):
-        print("[!] 'nmap' no está instalado. Instálalo con: sudo apt install nmap")
+        msg_error("'nmap' no está instalado. Instálalo con: sudo apt install nmap")
         return ""
     cmd = ["sudo", "nmap"] + args if usar_sudo else ["nmap"] + args
-    print(f"\n[+] Ejecutando: {' '.join(cmd)}\n" + "-" * 50)
+    msg_info(f"Ejecutando: {' '.join(cmd)}")
+    print(gris("-" * 62))
     try:
         res = subprocess.run(cmd, capture_output=True, text=True, check=False)
         salida = (res.stdout or "") + (res.stderr or "")
         print(salida)
         return res.stdout or ""
     except FileNotFoundError:
-        print("[!] No se pudo ejecutar nmap.")
+        msg_error("No se pudo ejecutar nmap.")
         return ""
 
 
@@ -75,12 +96,13 @@ def escanear_red(rango: str) -> list[dict]:
     if ip_actual:
         hosts.append({"ip": ip_actual, "dispositivo": hostname_actual})
 
-    print(f"\n=== HOSTS DETECTADOS EN {rango} ===")
+    print()
+    cabecera_seccion("Hosts Detectados", rango)
     if not hosts:
-        print("No se detectaron hosts activos.")
+        msg_aviso("No se detectaron hosts activos en el rango indicado.")
     else:
         for idx, h in enumerate(hosts, start=1):
-            print(f"  {idx}) IP: {h['ip']} | Dispositivo/Host: {h['dispositivo']}")
+            print(f"  [{idx}] IP: {verde(h['ip'])}  |  Dispositivo/Host: {h['dispositivo']}")
     return hosts
 
 
@@ -89,7 +111,6 @@ def _parsear_puertos_y_so(salida_nmap: str) -> tuple[list[dict], str]:
     so_estimado = "No detectado"
 
     for linea in salida_nmap.splitlines():
-        # Ej: 22/tcp   open  ssh     OpenSSH 8.9p1
         m_puerto = re.match(r"^(\d+)/(tcp|udp)\s+open\s+(\S+)(?:\s+(.*))?$", linea.strip())
         if m_puerto:
             puertos.append({
@@ -126,7 +147,7 @@ def cargar_resultado_ip(ip: str) -> dict | None:
 
 
 def analizar_objetivo(ip: str, modo: str = "rapido") -> dict:
-    hacer_ping(ip)
+    hacer_ping(ip, pausar_al_final=False)
 
     if modo == "completo":
         salida = _ejecutar_nmap(["-p-", "--open", "-sV", "-O", ip], usar_sudo=True)
@@ -147,57 +168,73 @@ def analizar_objetivo(ip: str, modo: str = "rapido") -> dict:
     }
 
     ruta = guardar_resultado_ip(ip, registro)
-    print(f"\n[+] Resumen guardado para {ip} en: {ruta.name}")
-    print(f"    SO / Dispositivo estimado: {registro['so_dispositivo']}")
+    print()
+    cabecera_seccion("Resumen de Análisis", ip)
+    msg_ok(f"Guardado en: resultados/escaneos/{ruta.name}")
+    msg_info(f"SO / Dispositivo estimado: {registro['so_dispositivo']}")
     if registro["puertos"]:
         for p in registro["puertos"]:
-            print(f"    - Puerto {p['puerto']}/{p['protocolo']} -> {p['servicio']} ({p['version']})")
+            ver = f" ({p['version']})" if p["version"] else ""
+            print(f"  • Puerto {verde(str(p['puerto']))}/{p['protocolo']} -> {p['servicio']}{ver}")
     else:
-        print("    - No se detectaron puertos abiertos en este escaneo.")
+        msg_nota("No se detectaron puertos abiertos en este escaneo.")
 
+    pausar()
     return registro
 
 
 def menu_reconocimiento(objetivo_actual: str | None = None) -> str | None:
     while True:
-        print("\n=== RECONOCIMIENTO Y ANÁLISIS ===")
-        if objetivo_actual:
-            print(f"Objetivo activo: {objetivo_actual}")
-        print("1) Escanear red para ver IPs activas y dispositivos (-sn)")
-        print("2) Hacer ping rápido a una IP (-c 1)")
-        print("3) Analizar una IP (puertos, servicios y SO/dispositivo)")
-        print("0) Volver al menú principal")
+        limpiar()
+        imprimir_menu(
+            "Reconocimiento y Análisis",
+            [
+                ("1", "Escanear red para ver IPs activas y dispositivos (-sn)"),
+                ("2", "Hacer ping rápido a una IP (-c 1)"),
+                ("3", "Analizar una IP (puertos, servicios y SO/dispositivo)"),
+                ("0", "Volver al menú principal"),
+            ],
+            subtitulo=f"Objetivo activo: {objetivo_actual or 'Ninguno'}",
+        )
 
-        op = input("Elige una opción: ").strip()
+        op = input(verde("Elige una opción: ")).strip()
 
         if op == "1":
-            rango = input("Introduce el rango de red (ej. 192.168.1.0/24): ").strip()
+            rango = input(verde("Introduce el rango de red (ej. 192.168.68.0/24): ")).strip()
             if rango:
                 hosts = escanear_red(rango)
                 if hosts:
-                    elegir = input("¿Fijar alguna IP detectada como objetivo actual? (número o Enter para omitir): ").strip()
+                    elegir = input(verde("\n¿Fijar alguna IP como objetivo actual? (número o Enter para omitir): ")).strip()
                     if elegir.isdigit() and 1 <= int(elegir) <= len(hosts):
                         ip_sel = hosts[int(elegir) - 1]["ip"]
-                        print(f"[+] Objetivo fijado en: {ip_sel}")
+                        msg_ok(f"Objetivo fijado en: {ip_sel}")
+                        pausar()
                         return ip_sel
+                pausar()
         elif op == "2":
-            ip = input(f"IP destino [{objetivo_actual or ''}]: ").strip() or (objetivo_actual or "")
+            ip = input(verde(f"IP destino [{objetivo_actual or ''}]: ")).strip() or (objetivo_actual or "")
             if ip:
-                hacer_ping(ip)
+                hacer_ping(ip, pausar_al_final=True)
         elif op == "3":
-            ip = input(f"IP a analizar [{objetivo_actual or ''}]: ").strip() or (objetivo_actual or "")
+            ip = input(verde(f"IP a analizar [{objetivo_actual or ''}]: ")).strip() or (objetivo_actual or "")
             if not ip:
-                print("[!] Debes indicar una IP.")
+                msg_aviso("Debes indicar una IP.")
+                pausar()
                 continue
-            print("Tipo de análisis:")
-            print("  1) Puertos comunes y servicios (-sV)")
-            print("  2) Todos los puertos + servicios + SO (-p- --open -sV -O con sudo)")
-            print("  3) Análisis agresivo completo (-p- --open -A con sudo)")
-            tipo = input("Elige [1]: ").strip() or "1"
+            imprimir_menu(
+                "Tipo de Análisis",
+                [
+                    ("1", "Puertos comunes y servicios (-sV)"),
+                    ("2", "Todos los puertos + servicios + SO (-p- --open -sV -O con sudo)"),
+                    ("3", "Análisis agresivo completo (-p- --open -A con sudo)"),
+                ],
+            )
+            tipo = input(verde("Elige [1]: ")).strip() or "1"
             modo_map = {"1": "rapido", "2": "completo", "3": "agresivo"}
             analizar_objetivo(ip, modo_map.get(tipo, "rapido"))
             return ip
         elif op == "0":
             return objetivo_actual
         else:
-            print("[!] Opción no válida.")
+            msg_aviso("Opción no válida.")
+            pausar()

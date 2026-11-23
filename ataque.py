@@ -5,6 +5,19 @@ import subprocess
 from datetime import datetime
 from pathlib import Path
 
+from ui import (
+    cabecera_seccion,
+    imprimir_menu,
+    limpiar,
+    msg_aviso,
+    msg_error,
+    msg_info,
+    msg_nota,
+    msg_ok,
+    pausar,
+    verde,
+)
+
 BASE_DIR = Path(__file__).resolve().parent
 CARPETA_DICCIONARIOS = BASE_DIR / "diccionarios"
 CARPETA_RESULTADOS = BASE_DIR / "resultados"
@@ -44,33 +57,41 @@ def _normalizar_servicio(servicio: str, puerto: int) -> str | None:
 
 def _elegir_diccionario_usuarios(diccionario_passwords: str) -> str | None:
     archivos = sorted([p for p in CARPETA_DICCIONARIOS.iterdir() if p.is_file()]) if CARPETA_DICCIONARIOS.exists() else []
-    print("\n--- DICCIONARIO DE USUARIOS ---")
-    print(f"1) Usar el mismo diccionario ({Path(diccionario_passwords).name})")
-    print("2) Elegir otro diccionario de la carpeta diccionarios/")
-    print("3) Escribir una ruta manual")
+    imprimir_menu(
+        "Diccionario de Usuarios",
+        [
+            ("1", f"Usar el mismo diccionario ({Path(diccionario_passwords).name})"),
+            ("2", "Elegir otro diccionario de la carpeta diccionarios/"),
+            ("3", "Escribir una ruta manual"),
+        ],
+    )
 
-    sel = input("Elige opción [1]: ").strip() or "1"
+    sel = input(verde("Elige opción [1]: ")).strip() or "1"
     if sel == "1":
         return diccionario_passwords
     if sel == "2":
         if not archivos:
-            print("[!] No hay diccionarios en la carpeta diccionarios/.")
+            msg_aviso("No hay diccionarios en la carpeta diccionarios/.")
+            pausar()
             return None
         for idx, a in enumerate(archivos, start=1):
-            print(f"  {idx}) {a.name}")
-        num = input("Número de diccionario de usuarios: ").strip()
+            print(f"  [{idx}] {a.name}")
+        num = input(verde("Número de diccionario de usuarios: ")).strip()
         if num.isdigit() and 1 <= int(num) <= len(archivos):
             return str(archivos[int(num) - 1])
-        print("[!] Selección no válida.")
+        msg_aviso("Selección no válida.")
+        pausar()
         return None
     if sel == "3":
-        ruta = input("Ruta del archivo de usuarios: ").strip()
+        ruta = input(verde("Ruta del archivo de usuarios: ")).strip()
         if ruta and Path(ruta).exists():
             return ruta
-        print("[!] La ruta indicada no existe.")
+        msg_error("La ruta indicada no existe.")
+        pausar()
         return None
 
-    print("[!] Opción no válida.")
+    msg_aviso("Opción no válida.")
+    pausar()
     return None
 
 
@@ -134,7 +155,6 @@ def registrar_acceso_exitoso(ip: str, servicio: str, puerto: int, usuario: str, 
 def _extraer_credenciales_hydra(salida: str) -> list[tuple[str, str]]:
     hallazgos = []
     for linea in salida.splitlines():
-        # Soporta tanto formato estándar como líneas con 'misc: ...'
         m = re.search(r"\[\d+\]\[\S+\]\s+host:\s+\S+.*?\blogin:\s+(\S+)\s+password:\s+(.*)$", linea)
         if m:
             usuario = m.group(1).strip()
@@ -154,7 +174,8 @@ def ejecutar_hydra(
     hilos: int = HILOS_POR_DEFECTO,
 ) -> list[tuple[str, str]]:
     if not shutil.which("hydra"):
-        print("[!] 'hydra' no está instalado. Instálalo con: sudo apt install hydra")
+        msg_error("'hydra' no está instalado. Instálalo con: sudo apt install hydra")
+        pausar()
         return []
 
     cmd = ["hydra", "-t", str(hilos), "-s", str(puerto)]
@@ -163,11 +184,13 @@ def ejecutar_hydra(
     elif lista_usuarios:
         cmd.extend(["-L", lista_usuarios])
     else:
-        print("[!] Debes indicar un usuario (-l) o una lista de usuarios (-L).")
+        msg_aviso("Debes indicar un usuario o una lista de usuarios.")
+        pausar()
         return []
 
     cmd.extend(["-P", diccionario_passwords, ip, servicio])
-    print(f"\n[+] Lanzando Hydra: {' '.join(cmd)}\n" + "-" * 50)
+    msg_info(f"Lanzando Hydra contra {ip}:{puerto} ({servicio})...")
+    print("-" * 62)
 
     res = subprocess.run(cmd, capture_output=True, text=True, check=False)
     salida = (res.stdout or "") + (res.stderr or "")
@@ -178,25 +201,31 @@ def ejecutar_hydra(
     so_disp = datos_ip.get("so_dispositivo", "No detectado")
 
     for u, p in hallazgos:
-        print(f"[+] Acceso válido en {ip}:{puerto} ({servicio}) -> usuario: '{u}' | contraseña: '{p}'")
+        msg_ok(f"Acceso válido en {ip}:{puerto} ({servicio}) -> usuario: '{u}' | contraseña: '{p}'")
         registrar_acceso_exitoso(ip, servicio, puerto, u, p, so_disp)
 
     if not hallazgos:
-        print("[-] No se encontraron credenciales válidas con los diccionarios indicados.")
+        msg_aviso("No se encontraron credenciales válidas con los diccionarios indicados.")
+
+    pausar()
     return hallazgos
 
 
 def menu_ataque(objetivo_actual: str | None = None, diccionario_actual: str | None = None) -> str | None:
     while True:
-        print("\n=== PRUEBAS DE ACCESO Y CREDENCIALES ===")
-        ip = input(f"IP objetivo [{objetivo_actual or ''}]: ").strip() or (objetivo_actual or "")
+        limpiar()
+        cabecera_seccion("Pruebas de Acceso y Credenciales", f"Objetivo: {objetivo_actual or 'Sin definir'}")
+
+        ip = input(verde(f"IP objetivo [{objetivo_actual or ''}]: ")).strip() or (objetivo_actual or "")
         if not ip:
-            print("[!] No hay IP objetivo definida.")
+            msg_aviso("No hay IP objetivo definida.")
+            pausar()
             return objetivo_actual
 
-        dic = input(f"Ruta del diccionario [{diccionario_actual or ''}]: ").strip() or (diccionario_actual or "")
+        dic = input(verde(f"Ruta del diccionario [{diccionario_actual or ''}]: ")).strip() or (diccionario_actual or "")
         if not dic or not Path(dic).exists():
-            print("[!] Debes seleccionar o indicar un diccionario válido.")
+            msg_error("Debes seleccionar o indicar un diccionario válido.")
+            pausar()
             return objetivo_actual
 
         datos_ip = _cargar_json(CARPETA_ESCANEO / f"{ip}.json", {})
@@ -208,22 +237,33 @@ def menu_ataque(objetivo_actual: str | None = None, diccionario_actual: str | No
             if srv in SERVICIOS_SOPORTADOS:
                 objetivos_ataque.append((srv, int(p["puerto"])))
 
-        print("\nModo de ataque:")
-        if objetivos_ataque:
-            print(f"1) Automático según escaneo previo ({', '.join(f'{s}:{pt}' for s, pt in objetivos_ataque)})")
-        else:
-            print("1) Automático según escaneo previo (sin puertos guardados aún; pasará a manual)")
-        print("2) Elegir servicio y puerto manualmente")
-        print("0) Volver al menú principal")
+        txt_auto = (
+            f"Automático según escaneo previo ({', '.join(f'{s}:{pt}' for s, pt in objetivos_ataque)})"
+            if objetivos_ataque
+            else "Automático según escaneo previo (sin puertos guardados; pasará a manual)"
+        )
 
-        op = input("Elige opción: ").strip()
+        imprimir_menu(
+            "Modo de Ataque",
+            [
+                ("1", txt_auto),
+                ("2", "Elegir servicio y puerto manualmente"),
+                ("0", "Volver al menú principal"),
+            ],
+        )
+
+        op = input(verde("Elige opción: ")).strip()
         if op == "0":
             return ip
 
-        print("\n¿Conoces el usuario?")
-        print("1) Sí, indicar un usuario concreto")
-        print("2) No, usar un diccionario de usuarios (mismo diccionario u otro)")
-        modo_user = input("Elige opción [1]: ").strip() or "1"
+        imprimir_menu(
+            "Objetivo de Usuario",
+            [
+                ("1", "Conozco el usuario (indicar uno concreto)"),
+                ("2", "No conozco el usuario (usar diccionario de usuarios)"),
+            ],
+        )
+        modo_user = input(verde("Elige opción [1]: ")).strip() or "1"
 
         usuario = None
         lista_usuarios = None
@@ -232,17 +272,17 @@ def menu_ataque(objetivo_actual: str | None = None, diccionario_actual: str | No
             if not lista_usuarios:
                 continue
         else:
-            usuario = input("Usuario objetivo [msfadmin]: ").strip() or "msfadmin"
+            usuario = input(verde("Usuario objetivo [msfadmin]: ")).strip() or "msfadmin"
 
         if op == "1" and objetivos_ataque:
             for srv, pt in objetivos_ataque:
                 ejecutar_hydra(ip, srv, pt, dic, usuario=usuario, lista_usuarios=lista_usuarios)
         else:
             if op == "1" and not objetivos_ataque:
-                print("[i] No había puertos guardados del escaneo; indícalo aquí:")
-            srv = input("Servicio (ssh / ftp / telnet) [ssh]: ").strip().lower() or "ssh"
+                msg_nota("No había puertos guardados del escaneo; indícalo aquí:")
+            srv = input(verde("Servicio (ssh / ftp / telnet) [ssh]: ")).strip().lower() or "ssh"
             puerto_def = {"ssh": 22, "ftp": 21, "telnet": 23}.get(srv, 22)
-            pt_txt = input(f"Puerto [{puerto_def}]: ").strip() or str(puerto_def)
+            pt_txt = input(verde(f"Puerto [{puerto_def}]: ")).strip() or str(puerto_def)
             puerto = int(pt_txt) if pt_txt.isdigit() else puerto_def
             ejecutar_hydra(ip, srv, puerto, dic, usuario=usuario, lista_usuarios=lista_usuarios)
 
