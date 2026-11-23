@@ -5,6 +5,7 @@ import subprocess
 from datetime import datetime
 from pathlib import Path
 
+from conexion import lanzar_conexion
 from ui import (
     cabecera_seccion,
     imprimir_menu,
@@ -204,10 +205,24 @@ def ejecutar_hydra(
         msg_ok(f"Acceso válido en {ip}:{puerto} ({servicio}) -> usuario: '{u}' | contraseña: '{p}'")
         registrar_acceso_exitoso(ip, servicio, puerto, u, p, so_disp)
 
-    if not hallazgos:
+    if hallazgos:
+        u_primero, p_primero = hallazgos[0]
+        conectar_ahora = input(verde("\n¿Conectarte al sistema ahora mismo? [S/n]: ")).strip().lower()
+        if conectar_ahora in ("", "s", "si", "sí", "y", "yes"):
+            lanzar_conexion({
+                "ip": ip,
+                "servicio": servicio,
+                "puerto": int(puerto),
+                "usuario": u_primero,
+                "password": p_primero,
+                "so_dispositivo": so_disp,
+            })
+        else:
+            pausar()
+    else:
         msg_aviso("No se encontraron credenciales válidas con los diccionarios indicados.")
+        pausar()
 
-    pausar()
     return hallazgos
 
 
