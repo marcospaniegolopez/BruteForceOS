@@ -32,6 +32,31 @@ def _cargar_json(ruta: Path, defecto):
         return defecto
 
 
+def _asegurar_herramienta(comando: str, paquete: str) -> bool:
+    if shutil.which(comando):
+        return True
+
+    msg_aviso(f"No tienes instalado '{comando}' (paquete '{paquete}').")
+    resp = input(verde(f"¿Quieres que BruteForceOS instale '{paquete}' automáticamente ahora? [S/n]: ")).strip().lower()
+    if resp not in ("", "s", "si", "sí", "y", "yes"):
+        msg_nota("Instalación cancelada.")
+        return False
+
+    msg_info(f"Instalando '{paquete}' con apt (puede pedir tu contraseña sudo)...")
+    res = subprocess.run(["sudo", "apt", "update"], check=False)
+    if res.returncode != 0:
+        msg_error("Falló 'sudo apt update'. Revisa tu conexión o permisos.")
+        return False
+
+    inst = subprocess.run(["sudo", "apt", "install", "-y", paquete], check=False)
+    if inst.returncode == 0 and shutil.which(comando):
+        msg_ok(f"'{paquete}' instalado correctamente.")
+        return True
+
+    msg_error(f"No se pudo completar la instalación de '{paquete}'.")
+    return False
+
+
 def lanzar_conexion(credencial: dict) -> None:
     ip = credencial["ip"]
     servicio = credencial["servicio"].lower()
@@ -45,27 +70,25 @@ def lanzar_conexion(credencial: dict) -> None:
     print()
 
     if servicio == "ssh":
-        if not shutil.which("ssh"):
-            msg_error("'ssh' no está instalado en este sistema.")
+        if not _asegurar_herramienta("ssh", "openssh-client"):
             pausar()
             return
         msg_nota("Escribe 'exit' para cerrar la sesión SSH y volver a BruteForceOS.\n")
         subprocess.run(["ssh", "-p", str(puerto), f"{usuario}@{ip}"], check=False)
 
     elif servicio == "ftp":
-        if shutil.which("lftp"):
-            msg_nota("Sesión FTP activa con lftp. Escribe 'exit' o 'quit' para salir.\n")
+        if _asegurar_herramienta("lftp", "lftp"):
+            msg_nota("Sesión FTP activa con autologin (lftp). Escribe 'exit' o 'quit' para salir.\n")
             subprocess.run(["lftp", "-u", f"{usuario},{password}", "-p", str(puerto), ip], check=False)
         elif shutil.which("ftp"):
-            msg_nota("Cliente 'ftp' estándar detectado (sin autologin).")
+            msg_nota("Usando cliente 'ftp' estándar (sin autologin).")
             msg_info(f"Usuario: {usuario}  |  Contraseña: {password}\n")
             subprocess.run(["ftp", ip, str(puerto)], check=False)
         else:
-            msg_error("No está instalado 'lftp' ni 'ftp'. Instálalo con: sudo apt install lftp")
+            msg_error("No hay cliente FTP disponible para conectar.")
 
     elif servicio == "telnet":
-        if not shutil.which("telnet"):
-            msg_error("'telnet' no está instalado en este sistema.")
+        if not _asegurar_herramienta("telnet", "telnet"):
             pausar()
             return
         msg_info(f"Usuario: {usuario}  |  Contraseña: {password}")
