@@ -2,6 +2,7 @@ import json
 import re
 import shutil
 import subprocess
+from contextlib import contextmanager
 from datetime import datetime
 from pathlib import Path
 
@@ -54,6 +55,36 @@ def _normalizar_servicio(servicio: str, puerto: int) -> str | None:
     if "telnet" in s or puerto == 23:
         return "telnet"
     return None
+
+
+@contextmanager
+def _ssh_config_legado(ip: str):
+    ssh_dir = Path.home() / ".ssh"
+    ssh_dir.mkdir(mode=0o700, parents=True, exist_ok=True)
+    cfg_path = ssh_dir / "config"
+    original = cfg_path.read_text(encoding="utf-8") if cfg_path.exists() else None
+
+    bloque_legado = (
+        f"\n# BruteForceOS compat SSH antiguo\n"
+        f"Host {ip}\n"
+        f"    MACs +hmac-sha1,hmac-md5,umac-64@openssh.com\n"
+        f"    KexAlgorithms +diffie-hellman-group14-sha1,diffie-hellman-group1-sha1\n"
+        f"    HostKeyAlgorithms +ssh-rsa\n"
+        f"    PubkeyAcceptedKeyTypes +ssh-rsa\n"
+    )
+    cfg_path.write_text((original or "") + bloque_legado, encoding="utf-8")
+    try:
+        yield
+    finally:
+        if original is None:
+            cfg_path.unlink(missing_ok=True)
+        else:
+            cfg_path.write_text(original, encoding="utf-8")
+
+
+def _limpiar_hydra_restore() -> None:
+    for ruta in (Path.cwd() / "hydra.restore", BASE_DIR / "hydra.restore"):
+        ruta.unlink(missing_ok=True)
 
 
 def _elegir_diccionario_usuarios(diccionario_passwords: str) -> str | None:
@@ -193,28 +224,24 @@ def ejecutar_hydra(
     msg_info(f"Lanzando Hydra contra {ip}:{puerto} ({servicio})...")
     print("-" * 62)
 
-    res = subprocess.run(cmd, capture_output=True, text=True, check=False)
-    salida = (res.stdout or "") + (res.stderr or "")
-    print(salida)
+    try:
+        res = subprocess.run(cmd, capture_output=True, text=True, check=False)
+        salida = (res.stdout or "") + (res.stderr or "")
+        print(salida)
 
-    # Si es SSH y hay choque de algoritmos/MAC con un servidor antiguo, reintenta automáticamente
-    if servicio == "ssh" and any(
-        clave in salida.lower()
-        for clave in ("no match for method", "kex error", "mac algo", "cipher")
-    ):
-        msg_nota("Servidor SSH antiguo detectado. Reintentando con algoritmos compatibles...")
-        cmd_legado = base_cmd + [
-            "-m",
-            "hmac-sha1,hmac-md5,umac-64@openssh.com",
-            "-P",
-            diccionario_passwords,
-            ip,
-            servicio,
-        ]
-        res_legado = subprocess.run(cmd_legado, capture_output=True, text=True, check=False)
-        salida_legado = (res_legado.stdout or "") + (res_legado.stderr or "")
-        print(salida_legado)
-        salida += "\n" + salida_legado
+        # Si es SSH y hay choque de algoritmos/MAC con un servidor antiguo, reintenta usando ~/.ssh/config temporal
+        if servicio == "ssh" and any(
+            clave in salida.lower()
+            for clave in ("no match for method", "kex error", "mac algo", "cipher", "host key")
+        ):
+            msg_nota("Servidor SSH antiguo detectado. Reintentando con compatibilidad de algoritmos...")
+            with _ssh_config_legado(ip):
+                res_legado = subprocess.run(cmd, capture_output=True, text=True, check=False)
+            salida_legado = (res_legado.stdout or "") + (res_legado.stderr or "")
+            print(salida_legado)
+            salida += "\n" + salida_legado
+    finally:
+        _limpiar_hydra_restore()
 
     hallazgos = _extraer_credenciales_hydra(salida)
     datos_ip = _cargar_json(CARPETA_ESCANEO / f"{ip}.json", {})
