@@ -7,6 +7,7 @@ from datetime import datetime
 from pathlib import Path
 
 from conexion import lanzar_conexion
+from validacion import es_ip_valida
 from ui import (
     cabecera_seccion,
     imprimir_menu,
@@ -280,6 +281,10 @@ def menu_ataque(objetivo_actual: str | None = None, diccionario_actual: str | No
         ip = input(verde(f"IP objetivo [{objetivo_actual or ''}]: ")).strip() or (objetivo_actual or "")
         if not ip:
             msg_aviso("No hay IP objetivo definida.")
+            pausar()
+            return objetivo_actual
+        if not es_ip_valida(ip):
+            msg_error(f"'{ip}' no es una dirección IP válida.")
             pausar()
             return objetivo_actual
 

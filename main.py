@@ -5,6 +5,7 @@ from pathlib import Path
 from ataque import menu_ataque
 from conexion import menu_conexion
 from diccionarios import menu_diccionarios
+from entorno import chequear_entorno
 from reconocimiento import menu_reconocimiento
 from ui import (
     barra_sesion,
@@ -14,6 +15,7 @@ from ui import (
     limpiar,
     msg_aviso,
     msg_info,
+    msg_nota,
     pausar,
     verde,
 )
@@ -32,12 +34,17 @@ def inicializar_carpetas() -> None:
 
 def animacion_inicio() -> None:
     limpiar()
+    ancho = 62
+    vacia = " " * ancho
     lineas = [
-        cyan("=" * 62),
-        verde("              B R U T E F O R C E   O S              "),
-        "         Programa creado por: Marcos Paniego López        ",
-        gris("     Uso exclusivo en entornos de prueba autorizados    "),
-        cyan("=" * 62),
+        cyan("  ╭" + "─" * ancho + "╮"),
+        cyan("  │") + vacia + cyan("│"),
+        cyan("  │") + verde("B R U T E F O R C E   O S".center(ancho)) + cyan("│"),
+        cyan("  │") + vacia + cyan("│"),
+        cyan("  │") + gris("Creado por  ·  Marcos Paniego López".center(ancho)) + cyan("│"),
+        cyan("  │") + gris("Uso exclusivo en entornos de prueba autorizados".center(ancho)) + cyan("│"),
+        cyan("  │") + vacia + cyan("│"),
+        cyan("  ╰" + "─" * ancho + "╯"),
     ]
     for linea in lineas:
         print(linea)
@@ -54,6 +61,8 @@ def resetear_sesion(sesion: dict) -> None:
 def main() -> None:
     inicializar_carpetas()
     animacion_inicio()
+    chequear_entorno()
+    pausar()
 
     sesion = {
         "objetivo_ip": None,
@@ -75,26 +84,35 @@ def main() -> None:
         barra_sesion(sesion["objetivo_ip"], sesion["diccionario"])
         imprimir_menu("Menú Principal", opciones_menu)
 
-        opcion = input(verde("Elige una opción: ")).strip()
+        try:
+            opcion = input(verde("Elige una opción: ")).strip()
 
-        if opcion == "1":
-            sesion["objetivo_ip"] = menu_reconocimiento(sesion["objetivo_ip"])
-        elif opcion == "2":
-            sesion["diccionario"] = menu_diccionarios(sesion["diccionario"])
-        elif opcion == "3":
-            sesion["objetivo_ip"] = menu_ataque(sesion["objetivo_ip"], sesion["diccionario"])
-        elif opcion == "4":
-            sesion["objetivo_ip"] = menu_conexion(sesion["objetivo_ip"])
-        elif opcion == "5":
-            resetear_sesion(sesion)
-        elif opcion == "0":
-            limpiar()
-            msg_info("Saliendo de BruteForceOS. ¡Hasta la próxima prueba!")
-            sys.exit(0)
-        else:
-            msg_aviso("Opción no válida. Revisa las opciones disponibles.")
+            if opcion == "1":
+                sesion["objetivo_ip"] = menu_reconocimiento(sesion["objetivo_ip"])
+            elif opcion == "2":
+                sesion["diccionario"] = menu_diccionarios(sesion["diccionario"])
+            elif opcion == "3":
+                sesion["objetivo_ip"] = menu_ataque(sesion["objetivo_ip"], sesion["diccionario"])
+            elif opcion == "4":
+                sesion["objetivo_ip"] = menu_conexion(sesion["objetivo_ip"])
+            elif opcion == "5":
+                resetear_sesion(sesion)
+            elif opcion == "0":
+                limpiar()
+                msg_info("Saliendo de BruteForceOS. ¡Hasta la próxima prueba!")
+                sys.exit(0)
+            else:
+                msg_aviso("Opción no válida. Revisa las opciones disponibles.")
+                pausar()
+        except KeyboardInterrupt:
+            print()
+            msg_nota("Operación cancelada. Volviendo al menú principal.")
             pausar()
 
 
 if __name__ == "__main__":
-    main()
+    try:
+        main()
+    except KeyboardInterrupt:
+        print()
+        sys.exit(0)

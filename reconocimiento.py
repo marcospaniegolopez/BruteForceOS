@@ -18,6 +18,7 @@ from ui import (
     pausar,
     verde,
 )
+from validacion import es_ip_valida, es_rango_valido
 
 BASE_DIR = Path(__file__).resolve().parent
 CARPETA_ESCANEO = BASE_DIR / "resultados" / "escaneos"
@@ -201,6 +202,10 @@ def menu_reconocimiento(objetivo_actual: str | None = None) -> str | None:
 
         if op == "1":
             rango = input(verde("Introduce el rango de red (ej. 192.168.68.0/24): ")).strip()
+            if rango and not es_rango_valido(rango):
+                msg_error(f"'{rango}' no es una IP o rango CIDR válido (ej. 192.168.1.0/24).")
+                pausar()
+                continue
             if rango:
                 hosts = escanear_red(rango)
                 if hosts:
@@ -213,12 +218,20 @@ def menu_reconocimiento(objetivo_actual: str | None = None) -> str | None:
                 pausar()
         elif op == "2":
             ip = input(verde(f"IP destino [{objetivo_actual or ''}]: ")).strip() or (objetivo_actual or "")
+            if ip and not es_ip_valida(ip):
+                msg_error(f"'{ip}' no es una dirección IP válida.")
+                pausar()
+                continue
             if ip:
                 hacer_ping(ip, pausar_al_final=True)
         elif op == "3":
             ip = input(verde(f"IP a analizar [{objetivo_actual or ''}]: ")).strip() or (objetivo_actual or "")
             if not ip:
                 msg_aviso("Debes indicar una IP.")
+                pausar()
+                continue
+            if not es_ip_valida(ip):
+                msg_error(f"'{ip}' no es una dirección IP válida.")
                 pausar()
                 continue
             imprimir_menu(

@@ -15,6 +15,7 @@ from ui import (
     pausar,
     verde,
 )
+from validacion import es_ip_valida
 
 BASE_DIR = Path(__file__).resolve().parent
 CARPETA_RESULTADOS = BASE_DIR / "resultados"
@@ -173,6 +174,10 @@ def menu_conexion(objetivo_actual: str | None = None) -> str | None:
 
         if op == "1":
             ip = input(verde(f"Introduce solo la IP [{objetivo_actual or ''}]: ")).strip() or (objetivo_actual or "")
+            if ip and not es_ip_valida(ip):
+                msg_error(f"'{ip}' no es una dirección IP válida.")
+                pausar()
+                continue
             if ip:
                 conectar_por_ip(ip)
                 return ip
