@@ -1,0 +1,22 @@
+# Caché de Python
+__pycache__/
+*.py[cod]
+*.pyo
+
+# Resultados de escaneos y credenciales (datos sensibles, NO subir)
+resultados/
+
+# Diccionarios locales (pueden ser muy pesados, p. ej. rockyou.txt)
+diccionarios/*
+!diccionarios/.gitkeep
+
+# Restauración temporal de Hydra
+hydra.restore
+
+# Entornos virtuales
+venv/
+.venv/
+
+# Archivos del sistema / editor
+.DS_Store
+*.swp

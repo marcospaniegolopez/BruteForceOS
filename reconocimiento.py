@@ -18,6 +18,7 @@ from ui import (
     pausar,
     verde,
 )
+from conexion import _asegurar_herramienta
 from validacion import es_ip_valida, es_rango_valido
 
 BASE_DIR = Path(__file__).resolve().parent
@@ -55,8 +56,7 @@ def hacer_ping(ip: str, pausar_al_final: bool = False) -> bool:
 
 
 def _ejecutar_nmap(args: list[str], usar_sudo: bool = False) -> str:
-    if not shutil.which("nmap"):
-        msg_error("'nmap' no está instalado. Instálalo con: sudo apt install nmap")
+    if not shutil.which("nmap") and not _asegurar_herramienta("nmap", "nmap"):
         return ""
     cmd = ["sudo", "nmap"] + args if usar_sudo else ["nmap"] + args
     msg_info(f"Ejecutando: {' '.join(cmd)}")

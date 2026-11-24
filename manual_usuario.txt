@@ -15,8 +15,11 @@ sistemas operativos, con una interfaz de consola limpia y unificada:
     puertos/servicios y estimación de SO/dispositivo con Nmap.
   - Gestión, creación y unión de diccionarios (RockYou, Crunch, CUPP, sort -u).
   - Pruebas de acceso por fuerza bruta con Hydra sobre servicios compatibles
-    (SSH, FTP, Telnet), permitiendo usar diccionario para usuarios o
-    contraseñas y guardando las credenciales válidas.
+    (SSH, FTP, Telnet, HTTP/HTTPS, RDP, VNC, MySQL, SMB), permitiendo usar
+    diccionario para usuarios o contraseñas y guardando las credenciales.
+  - Módulo de cámaras IP / RTSP: descubrimiento de puertos típicos de cámara,
+    fuerza bruta de credenciales RTSP con cameradar y visor de vídeo en
+    directo con ffplay / vlc.
   - Conexión rápida introduciendo solo la IP o seleccionando un dispositivo
     ya accedido anteriormente desde el historial guardado, con pantalla
     limpia de sesión activa y pausa controlada al desconectar.
@@ -32,6 +35,7 @@ BruteForceOS/
 ├── reconocimiento.py        -> Ping, escaneo de red y análisis de IP/SO.
 ├── diccionarios.py          -> Listado, creación y fusión de diccionarios.
 ├── ataque.py                -> Lanzamiento de Hydra y registro de accesos.
+├── camaras.py               -> Cámaras IP: puertos, RTSP (cameradar) y visor.
 ├── conexion.py              -> Conexión por IP o desde historial previo.
 ├── manual_usuario.txt       -> Este manual de uso.
 ├── .gitignore               -> Exclusiones recomendadas para Git/GitHub.
@@ -88,16 +92,30 @@ Flujo habitual paso a paso:
     * Al conectar, limpia la pantalla, muestra los datos de acceso y, al
       cerrar la sesión remota, espera ENTER antes de volver al menú.
 
-  Paso 5 - Reset de sesión (Opción 5):
+  Paso 5 - Cámaras IP / RTSP (Opción 5):
+    * Descubre puertos de cámara (80/8080/443 panel web, 554/8554 RTSP,
+      37777/34567 DVR propietario) en una IP o rango.
+    * Fuerza bruta de credenciales RTSP con cameradar (si está instalado).
+    * Ver vídeo RTSP en directo: construye la URL rtsp://user:pass@ip:puerto/ruta
+      (con rutas habituales por fabricante) y la abre con ffplay o vlc.
+    * Fuerza bruta del panel web de la cámara (http-get / https-get / formulario).
+
+  Paso 6 - Reset de sesión (Opción 6):
     * Limpia el objetivo y el diccionario de la sesión actual para pasar a
       otra prueba sin borrar el historial de dispositivos ni los escaneos.
+
+NOVEDADES DE ROBUSTEZ:
+    * Telnet/FTP/SSH ya no se quedan colgados: antes de abrir la sesión se
+      comprueba con un socket (timeout 5 s) que el puerto responde.
+    * Validación de puerto (1-65535) antes de lanzar Hydra.
+    * Spinner animado durante escaneos y ataques largos.
 
 
 4. NOTAS Y BUENAS PRÁCTICAS
 -----------------------------------------------------------------------------
 - Asegúrate de tener instaladas en Kali las herramientas del sistema según
   las pruebas que vayas a realizar: nmap, hydra, crunch, cupp, openssh-client,
-  lftp/ftp y telnet.
+  lftp/ftp, telnet, cameradar (RTSP) y ffmpeg/vlc (visor de vídeo).
 - Usa codificación UTF-8 y finales de línea LF al editar los archivos en VS Code.
 - No utilices este programa fuera de entornos de laboratorio propios o con
   autorización expresa.

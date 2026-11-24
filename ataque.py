@@ -6,10 +6,11 @@ from contextlib import contextmanager
 from datetime import datetime
 from pathlib import Path
 
-from conexion import lanzar_conexion
+from conexion import _asegurar_herramienta, lanzar_conexion
 from validacion import es_ip_valida
 from ui import (
     cabecera_seccion,
+    ejecutar_con_spinner,
     imprimir_menu,
     limpiar,
     msg_aviso,
@@ -27,8 +28,30 @@ CARPETA_RESULTADOS = BASE_DIR / "resultados"
 CARPETA_ESCANEO = CARPETA_RESULTADOS / "escaneos"
 ARCHIVO_DISPOSITIVOS = CARPETA_RESULTADOS / "dispositivos_accedidos.json"
 
-SERVICIOS_SOPORTADOS = {"ssh", "ftp", "telnet"}
+SERVICIOS_SOPORTADOS = {
+    "ssh", "ftp", "telnet",
+    "http-get", "http-form-post", "https-get", "https-form-post",
+    "rdp", "vnc", "mysql", "smb",
+}
 HILOS_POR_DEFECTO = 4
+
+# Puerto por defecto para cada servicio soportado por hydra
+PUERTOS_SERVICIO = {
+    "ssh": 22,
+    "ftp": 21,
+    "telnet": 23,
+    "http-get": 80,
+    "http-form-post": 80,
+    "https-get": 443,
+    "https-form-post": 443,
+    "rdp": 3389,
+    "vnc": 5900,
+    "mysql": 3306,
+    "smb": 445,
+}
+
+# Servicios web que requieren una opción de módulo extra (ruta / formulario)
+SERVICIOS_WEB = {"http-get", "http-form-post", "https-get", "https-form-post"}
 
 
 def _cargar_json(ruta: Path, defecto):
@@ -55,7 +78,24 @@ def _normalizar_servicio(servicio: str, puerto: int) -> str | None:
         return "ftp"
     if "telnet" in s or puerto == 23:
         return "telnet"
+    # Paneles web (cámaras, routers, NVR...): autenticación básica HTTP(S)
+    if "https" in s or puerto in (443, 8443):
+        return "https-get"
+    if "http" in s or puerto in (80, 8080, 8000, 81):
+        return "http-get"
+    if "ms-wbt-server" in s or "rdp" in s or puerto == 3389:
+        return "rdp"
+    if "vnc" in s or puerto in (5900, 5901):
+        return "vnc"
+    if "mysql" in s or puerto == 3306:
+        return "mysql"
+    if "microsoft-ds" in s or "netbios" in s or "smb" in s or puerto in (445, 139):
+        return "smb"
     return None
+
+
+def _puerto_valido(puerto: int) -> bool:
+    return 1 <= puerto <= 65535
 
 
 @contextmanager
@@ -126,6 +166,32 @@ def _elegir_diccionario_usuarios(diccionario_passwords: str) -> str | None:
     msg_aviso("Opción no válida.")
     pausar()
     return None
+
+
+def _opcion_modulo_para(servicio: str, interactivo: bool = True) -> str | None:
+    """Devuelve el argumento extra que hydra necesita para los módulos web.
+
+    - http-get / https-get: la ruta a proteger (por defecto "/").
+    - http-form-post / https-form-post: la cadena del formulario de login.
+    """
+    if servicio not in SERVICIOS_WEB:
+        return None
+
+    if servicio in ("http-get", "https-get"):
+        if not interactivo:
+            return "/"
+        ruta = input(verde("Ruta protegida del panel [/]: ")).strip() or "/"
+        if not ruta.startswith("/"):
+            ruta = "/" + ruta
+        return ruta
+
+    # Formularios (login web de cámara/router)
+    if not interactivo:
+        return None
+    msg_nota("Formato hydra: /ruta:campo_user=^USER^&campo_pass=^PASS^:F=texto_de_error")
+    msg_nota("Ejemplo: /login.cgi:user=^USER^&pwd=^PASS^:F=incorrect")
+    forma = input(verde("Cadena del formulario: ")).strip()
+    return forma or None
 
 
 def registrar_acceso_exitoso(ip: str, servicio: str, puerto: int, usuario: str, password: str, so_dispositivo: str = "No detectado") -> None:
@@ -205,9 +271,14 @@ def ejecutar_hydra(
     usuario: str | None = None,
     lista_usuarios: str | None = None,
     hilos: int = HILOS_POR_DEFECTO,
+    opcion_modulo: str | None = None,
 ) -> list[tuple[str, str]]:
-    if not shutil.which("hydra"):
-        msg_error("'hydra' no está instalado. Instálalo con: sudo apt install hydra")
+    if not shutil.which("hydra") and not _asegurar_herramienta("hydra", "hydra"):
+        pausar()
+        return []
+
+    if not _puerto_valido(int(puerto)):
+        msg_error(f"Puerto fuera de rango (1-65535): {puerto}")
         pausar()
         return []
 
@@ -221,12 +292,19 @@ def ejecutar_hydra(
         pausar()
         return []
 
-    cmd = base_cmd + ["-P", diccionario_passwords, ip, servicio]
+    # Los modulos web de hydra reciben un argumento extra tras el servicio:
+    #   http-get       -> la ruta, ej. "/"
+    #   http-form-post -> "/login:user=^USER^&pass=^PASS^:F=texto_de_fallo"
+    cola = [ip, servicio]
+    if opcion_modulo:
+        cola.append(opcion_modulo)
+
+    cmd = base_cmd + ["-P", diccionario_passwords] + cola
     msg_info(f"Lanzando Hydra contra {ip}:{puerto} ({servicio})...")
     print("-" * 62)
 
     try:
-        res = subprocess.run(cmd, capture_output=True, text=True, check=False)
+        res = ejecutar_con_spinner(cmd, texto=f"Probando credenciales ({servicio})")
         salida = (res.stdout or "") + (res.stderr or "")
         print(salida)
 
@@ -237,7 +315,7 @@ def ejecutar_hydra(
         ):
             msg_nota("Servidor SSH antiguo detectado. Reintentando con compatibilidad de algoritmos...")
             with _ssh_config_legado(ip):
-                res_legado = subprocess.run(cmd, capture_output=True, text=True, check=False)
+                res_legado = ejecutar_con_spinner(cmd, texto="Reintentando (compatibilidad SSH)")
             salida_legado = (res_legado.stdout or "") + (res_legado.stderr or "")
             print(salida_legado)
             salida += "\n" + salida_legado
@@ -342,14 +420,24 @@ def menu_ataque(objetivo_actual: str | None = None, diccionario_actual: str | No
 
         if op == "1" and objetivos_ataque:
             for srv, pt in objetivos_ataque:
-                ejecutar_hydra(ip, srv, pt, dic, usuario=usuario, lista_usuarios=lista_usuarios)
+                opcion = _opcion_modulo_para(srv, interactivo=False)
+                ejecutar_hydra(ip, srv, pt, dic, usuario=usuario, lista_usuarios=lista_usuarios, opcion_modulo=opcion)
         else:
             if op == "1" and not objetivos_ataque:
                 msg_nota("No había puertos guardados del escaneo; indícalo aquí:")
-            srv = input(verde("Servicio (ssh / ftp / telnet) [ssh]: ")).strip().lower() or "ssh"
-            puerto_def = {"ssh": 22, "ftp": 21, "telnet": 23}.get(srv, 22)
+            msg_nota("Servicios: ssh ftp telnet http-get http-form-post https-get rdp vnc mysql smb")
+            srv = input(verde("Servicio [ssh]: ")).strip().lower() or "ssh"
+            if srv not in SERVICIOS_SOPORTADOS:
+                msg_aviso(f"Servicio '{srv}' no soportado. Usando 'ssh'.")
+                srv = "ssh"
+            puerto_def = PUERTOS_SERVICIO.get(srv, 22)
             pt_txt = input(verde(f"Puerto [{puerto_def}]: ")).strip() or str(puerto_def)
             puerto = int(pt_txt) if pt_txt.isdigit() else puerto_def
-            ejecutar_hydra(ip, srv, puerto, dic, usuario=usuario, lista_usuarios=lista_usuarios)
+            if not _puerto_valido(puerto):
+                msg_error(f"Puerto fuera de rango (1-65535): {puerto}")
+                pausar()
+                return ip
+            opcion = _opcion_modulo_para(srv, interactivo=True)
+            ejecutar_hydra(ip, srv, puerto, dic, usuario=usuario, lista_usuarios=lista_usuarios, opcion_modulo=opcion)
 
         return ip

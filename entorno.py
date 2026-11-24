@@ -14,6 +14,8 @@ HERRAMIENTAS = [
     ("lftp", "Conexión FTP con autologin", False),
     ("crunch", "Generar diccionarios", False),
     ("cupp", "Diccionarios personalizados", False),
+    ("cameradar", "Fuerza bruta RTSP de cámaras", False),
+    ("ffplay", "Ver vídeo RTSP en directo", False),
 ]
 
 

@@ -1,6 +1,10 @@
+import itertools
 import os
 import re
+import subprocess
 import sys
+import threading
+import time
 
 # ---------------------------------------------------------------------------
 # Inicialización de terminal
@@ -56,6 +60,10 @@ def rojo(texto: str) -> str:
 
 def azul(texto: str) -> str:
     return _c("1;34", texto)
+
+
+def magenta(texto: str) -> str:
+    return _c("1;35", texto)
 
 
 def gris(texto: str) -> str:
@@ -168,3 +176,107 @@ def imprimir_menu(titulo: str, opciones: list[tuple[str, str]], subtitulo: str |
         print(f"     {badge}  {desc}")
 
     print(cyan("  ╰" + "─" * _INNER + "╯"))
+
+
+# ---------------------------------------------------------------------------
+# Animación: spinner ligero para operaciones largas (no bloquea, usa un hilo)
+# ---------------------------------------------------------------------------
+_SPINNER_FRAMES = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"]
+
+
+class Spinner:
+    """Spinner de terminal que gira en un hilo aparte mientras dura una tarea.
+
+    Se desactiva automáticamente si la salida no es una TTY (no ensucia logs).
+    Uso:
+        with Spinner("Escaneando"):
+            ... tarea larga ...
+    """
+
+    def __init__(self, texto: str = "Trabajando"):
+        self.texto = texto
+        self._parar = threading.Event()
+        self._hilo: threading.Thread | None = None
+        self._activo = COLOR_ACTIVO
+
+    def _girar(self) -> None:
+        for frame in itertools.cycle(_SPINNER_FRAMES):
+            if self._parar.is_set():
+                break
+            sys.stdout.write("\r" + cyan("  " + frame + "  ") + self.texto + "...   ")
+            sys.stdout.flush()
+            time.sleep(0.08)
+        # Limpia la línea del spinner
+        sys.stdout.write("\r" + " " * (len(self.texto) + 14) + "\r")
+        sys.stdout.flush()
+
+    def __enter__(self) -> "Spinner":
+        if self._activo:
+            self._hilo = threading.Thread(target=self._girar, daemon=True)
+            self._hilo.start()
+        return self
+
+    def __exit__(self, *_exc) -> None:
+        if self._activo and self._hilo:
+            self._parar.set()
+            self._hilo.join()
+
+
+def ejecutar_con_spinner(
+    cmd: list[str],
+    texto: str = "Ejecutando",
+    timeout: float | None = None,
+) -> "subprocess.CompletedProcess":
+    """Ejecuta `cmd` con un spinner, capturando stdout+stderr como texto.
+
+    Fiabilidad:
+      - `timeout` (segundos): si se supera, mata el proceso y marca la salida.
+      - Ctrl+C: termina el proceso hijo (no deja nmap/hydra/cameradar huérfanos)
+        y re-lanza KeyboardInterrupt para volver limpio al menú.
+      - `errors="replace"`: tolera salida no-UTF8 sin reventar.
+
+    Devuelve siempre un `subprocess.CompletedProcess` con .stdout y .stderr.
+    """
+    resultado: dict = {}
+
+    def _worker() -> None:
+        try:
+            proc = subprocess.Popen(
+                cmd,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+                errors="replace",
+            )
+            resultado["proc"] = proc
+            try:
+                out, err = proc.communicate(timeout=timeout)
+                resultado["res"] = subprocess.CompletedProcess(cmd, proc.returncode, out, err)
+            except subprocess.TimeoutExpired:
+                proc.kill()
+                out, err = proc.communicate()
+                resultado["res"] = subprocess.CompletedProcess(
+                    cmd, 124, out, (err or "") + "\n[Tiempo de espera agotado: proceso detenido]"
+                )
+        except Exception as e:  # noqa: BLE001 - se re-lanza tras parar el spinner
+            resultado["error"] = e
+
+    hilo = threading.Thread(target=_worker)
+    with Spinner(texto):
+        hilo.start()
+        try:
+            hilo.join()
+        except KeyboardInterrupt:
+            proc = resultado.get("proc")
+            if proc and proc.poll() is None:
+                proc.terminate()
+                try:
+                    proc.wait(timeout=3)
+                except subprocess.TimeoutExpired:
+                    proc.kill()
+            hilo.join()
+            raise
+
+    if "error" in resultado:
+        raise resultado["error"]
+    return resultado["res"]

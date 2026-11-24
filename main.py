@@ -3,6 +3,7 @@ import time
 from pathlib import Path
 
 from ataque import menu_ataque
+from camaras import menu_camaras
 from conexion import menu_conexion
 from diccionarios import menu_diccionarios
 from entorno import chequear_entorno
@@ -74,7 +75,8 @@ def main() -> None:
         ("2", "Gestión y creación de diccionarios"),
         ("3", "Pruebas de acceso y credenciales"),
         ("4", "Acceso por IP / Dispositivos anteriores"),
-        ("5", "Resetear objetivo de la sesión actual"),
+        ("5", "Cámaras IP / RTSP (vídeo en directo)"),
+        ("6", "Resetear objetivo de la sesión actual"),
         ("0", "Salir"),
     ]
 
@@ -96,6 +98,8 @@ def main() -> None:
             elif opcion == "4":
                 sesion["objetivo_ip"] = menu_conexion(sesion["objetivo_ip"])
             elif opcion == "5":
+                sesion["objetivo_ip"] = menu_camaras(sesion["objetivo_ip"], sesion["diccionario"])
+            elif opcion == "6":
                 resetear_sesion(sesion)
             elif opcion == "0":
                 limpiar()

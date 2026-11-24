@@ -1,5 +1,6 @@
 import json
 import shutil
+import socket
 import subprocess
 from pathlib import Path
 
@@ -31,6 +32,19 @@ def _cargar_json(ruta: Path, defecto):
             return json.load(f)
     except (json.JSONDecodeError, OSError):
         return defecto
+
+
+def _puerto_accesible(ip: str, puerto: int, timeout: float = 5.0) -> bool:
+    """Comprueba con un socket TCP si el puerto responde, con timeout.
+
+    Evita que clientes interactivos como telnet/ftp se queden colgados
+    indefinidamente intentando conectar a un puerto filtrado o caído.
+    """
+    try:
+        with socket.create_connection((ip, puerto), timeout=timeout):
+            return True
+    except (OSError, socket.timeout):
+        return False
 
 
 def _asegurar_herramienta(comando: str, paquete: str) -> bool:
@@ -69,6 +83,15 @@ def lanzar_conexion(credencial: dict) -> None:
     cabecera_seccion("Conectado al Sistema", f"{ip}:{puerto} ({servicio.upper()})")
     msg_ok(f"Usuario: {usuario}  |  Contraseña: {password}")
     print()
+
+    # Pre-chequeo: si el puerto no responde en unos segundos, abortamos en lugar
+    # de lanzar un cliente interactivo (sobre todo telnet/ftp) que se colgaría.
+    msg_nota(f"Comprobando que {ip}:{puerto} está accesible...")
+    if not _puerto_accesible(ip, puerto):
+        msg_error(f"El puerto {puerto} de {ip} no responde (cerrado, filtrado o host caído).")
+        msg_nota("No se abre la sesión para evitar que la terminal se quede colgada.")
+        pausar()
+        return
 
     if servicio == "ssh":
         if not _asegurar_herramienta("ssh", "openssh-client"):
